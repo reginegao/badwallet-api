@@ -2,6 +2,7 @@ package badwallet_api.controller;
 
 import badwallet_api.model.Transaction;
 import badwallet_api.model.Wallet;
+import badwallet_api.service.PaymentClient;
 import badwallet_api.service.WalletSeederService;
 import badwallet_api.service.WalletService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,9 @@ public class WalletController {
 
     @Autowired
     private WalletSeederService walletSeederService;
+
+    @Autowired
+    private PaymentClient paymentClient;
 
     // 1. Seeder
     @PostMapping("/seed")
@@ -47,7 +51,8 @@ public class WalletController {
 
     // 4. Consulter un wallet par téléphone
     @GetMapping("/{phoneNumber}")
-    public ResponseEntity<Wallet> getWalletByPhone(@PathVariable String phoneNumber) {
+    public ResponseEntity<Wallet> getWalletByPhone(
+            @PathVariable String phoneNumber) {
         Optional<Wallet> wallet = walletService.getWalletByPhone(phoneNumber);
         return wallet.map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -92,5 +97,30 @@ public class WalletController {
     public ResponseEntity<List<Transaction>> getTransactions(
             @PathVariable String phoneNumber) {
         return ResponseEntity.ok(walletService.getTransactions(phoneNumber));
+    }
+
+    // 10. Payer facture du mois en cours
+    @PostMapping("/pay")
+    public ResponseEntity<Map> pay(@RequestBody Map<String, Object> body) {
+        String phoneNumber = body.get("phoneNumber").toString();
+        String serviceName = body.get("serviceName").toString();
+        Double amount = Double.valueOf(body.get("amount").toString());
+        Wallet wallet = walletService.getWalletByPhone(phoneNumber)
+                .orElseThrow(() -> new RuntimeException("Wallet non trouvé"));
+        walletService.withdraw(phoneNumber, amount);
+        Map facture = paymentClient.payerFactureMoisCourant(wallet.getCode(), serviceName);
+        return ResponseEntity.ok(facture);
+    }
+
+    // 11. Payer factures spécifiques
+    @PostMapping("/pay-factures")
+    public ResponseEntity<List<Map>> payFactures(
+            @RequestBody Map<String, Object> body) {
+        String phoneNumber = body.get("phoneNumber").toString();
+        List<String> references = (List<String>) body.get("factureReferences");
+        Wallet wallet = walletService.getWalletByPhone(phoneNumber)
+                .orElseThrow(() -> new RuntimeException("Wallet non trouvé"));
+        List<Map> factures = paymentClient.payerFacturesParReference(references);
+        return ResponseEntity.ok(factures);
     }
 }
